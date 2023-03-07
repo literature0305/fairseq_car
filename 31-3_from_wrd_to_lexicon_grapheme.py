@@ -1,42 +1,86 @@
-#!/bin/bash
-stage=-1
-stop_stage=100
+import sys
+import hgtk
 
-dir_trainset=/home/Workspace/fairseq/data/HD_100
-dir_pretrained=/home/Workspace/fairseq/pretrained_models # dir for pretrained models
-# name_model=checkpoint_best_k-wav2vec.pt # name pretrained_model (wav2vec_small.pt, wav2vec_small_10m.pt ...)
-name_model=wav2vec_small.pt
+wrd_dir=sys.argv[1]
+ltr_dir=sys.argv[2]
 
-# divide 1/20
-num_divide_valid=20
+assert len(sys.argv) == 3
 
-if [ ${stage} -le 1 ] && [ ${stop_stage} -ge 1 ]; then
-    echo "stage 1: prepare finetuning (we do not shuffle the input data plz shuffle it first)"
-    num_lines=`cat $dir_trainset/labels.ltr | wc -l`
-    num_valid=$(($num_lines / $num_divide_valid))
-    num_train=$(expr $num_lines - $num_valid)
+#cho-sung 19
+l_f=['ㄱ','ㄲ','ㄴ','ㄷ','ㄸ','ㄹ','ㅁ','ㅂ','ㅃ','ㅅ','ㅆ','ㅇ','ㅈ','ㅉ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
+#jung-sung 21
+l_m=['ㅏ','ㅐ','ㅑ','ㅒ','ㅓ','ㅔ','ㅕ','ㅖ','ㅗ','ㅘ','ㅙ','ㅚ','ㅛ','ㅜ','ㅝ','ㅞ','ㅟ','ㅠ','ㅡ','ㅢ','ㅣ']
+#jong-sung 27
+l_e=['ㄱ','ㄲ','ㄳ','ㄴ','ㄵ','ㄶ','ㄷ','ㄹ','ㄺ','ㄻ','ㄼ','ㄽ','ㄾ','ㄿ','ㅀ','ㅁ','ㅂ','ㅄ','ㅅ','ㅆ','ㅇ','ㅈ','ㅊ','ㅋ','ㅌ','ㅍ','ㅎ']
+#num
+num=['1','2','3','4','5','6','7','8','9','0']
 
-    # prepare train set
-    cat $dir_trainset/labels.ltr | head -$num_train > $dir_trainset/train.ltr
-    cat $dir_trainset/labels.wrd | head -$num_train > $dir_trainset/train.wrd
-    cat $dir_trainset/wav_dir.tsv | head -$num_train | cut -d '/' -f -2 | head -1 > $dir_trainset/train.tsv
-    cat $dir_trainset/wav_dir.tsv | head -$num_train | cut -d '/' -f 3- >> $dir_trainset/train.tsv
+with open(wrd_dir, 'r') as f:
+    lines = f.readlines()
 
-    # prepare dev set
-    cat $dir_trainset/labels.ltr | tail -$num_valid > $dir_trainset/dev_other.ltr
-    cat $dir_trainset/labels.wrd | tail -$num_valid > $dir_trainset/dev_other.wrd
-    cat $dir_trainset/wav_dir.tsv | tail -$num_valid | cut -d '/' -f -2 | head -1 > $dir_trainset/dev_other.tsv
-    cat $dir_trainset/wav_dir.tsv | tail -$num_valid | cut -d '/' -f 3- >> $dir_trainset/dev_other.tsv
+ltr_to_write=[]
 
-    # make dictionary
-    cat $dir_trainset/labels.ltr | sed s/' '/'\n'/g | LC_COLLATE='utf-8' sort -u | grep -v '^$' | sed s/'$'/' 1'/g > $dir_trainset/dict.ltr.txt
-fi
+for line in lines:
+    # new_line = line[0:len(line)-1]
+    new_line = line.replace('\n','\t')
+    if len(new_line.replace(' ', '').replace('\t', '')) == 0:
+        continue
 
-if [ ${stage} -le 2 ] && [ ${stop_stage} -ge 2 ]; then
-    echo "stage 2: do finetuning (vanilla)"
-    CUDA_VISIBLE_DEVICES=0,1,2,3 fairseq-hydra-train \
-        task.data=$dir_trainset \
-        model.w2v_path=$dir_pretrained/$name_model \
-        --config-dir examples/wav2vec/config/finetuning \
-        --config-name base_100h
-fi
+    ### decompose line with hgtk by cho-jung-jong sung
+    ### e.g) 각 -> ㄱ ㅏ ㄱ
+    decomped_line = hgtk.text.decompose(line)
+
+    ### make phone sequence from decomposed line
+    ### e.g) ㄱ ㅏ ㄱ -> f0 m0 e0
+    ### e.g) ㄱ ㅏ ㄴ -> f0 m0 e3
+    for i in range(0,len(decomped_line)-1):
+        if decomped_line[i] in l_m:
+            new_line = new_line + ' m' + str(l_m.index(decomped_line[i]))
+        elif decomped_line[i+1] in l_m:
+            new_line = new_line + ' f' + str(l_f.index(decomped_line[i]))
+        elif decomped_line[i] in l_e:
+            new_line = new_line + ' e' + str(l_e.index(decomped_line[i]))
+        elif decomped_line[i] in num:
+            new_line = new_line + ' n' + decomped_line[i]
+        elif decomped_line[i] == 'ᴥ':
+            new_line = new_line
+        elif decomped_line[i] == ' ':
+            new_line = new_line + ' |'
+        else:
+            new_line = new_line + ' ' + decomped_line[i]
+    if decomped_line[-1] in l_m:
+        new_line1 = new_line + ' m' + str(l_m.index(decomped_line[-1]))
+    elif decomped_line[-1] in l_e:
+        new_line1 = new_line + ' e' + str(l_e.index(decomped_line[-1]))
+    else:
+        new_line1 = new_line# + decomped_line[-1]
+
+    ltr_to_write.append(new_line1.replace('\t ','\t') + ' |' + '\n')
+
+with open(ltr_dir, 'w') as f:
+    f.writelines(ltr_to_write)
+
+
+# print('lexicon generated')
+
+
+
+
+
+
+
+
+# ltr_to_write=[]
+# for line in wrd:
+#     line = line.replace('\n','')
+#     new_line=''
+#     for char in line:
+#         if char == ' ':
+#             new_line = new_line + ' ' + '|'
+#         else:
+#             new_line = new_line + ' ' + char
+#     new_line = new_line.strip()
+#     ltr_to_write.append(new_line + '\n')
+
+# with open(ltr_dir, 'w') as f:
+#     f.writelines(ltr_to_write)
