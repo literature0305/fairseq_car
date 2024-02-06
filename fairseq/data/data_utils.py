@@ -21,6 +21,7 @@ import torch
 from fairseq.file_io import PathManager
 from fairseq import utils
 import os
+import hgtk
 
 logger = logging.getLogger(__name__)
 
@@ -372,7 +373,14 @@ def batch_by_size(
 
 
 def post_process(sentence: str, symbol: str):
-    if symbol == "sentencepiece":
+    if symbol == "grapheme":
+        sentence = sentence.replace(" ", "").replace("|", " ").strip()
+    elif symbol == "grapheme_v2":
+        sentence = hgtk.text.compose(sentence)
+    elif symbol == "grapheme_v3":
+        sentence = sentence.replace(" ", "").replace("|", " ").strip() + 'ᴥ'
+        sentence = hgtk.text.compose(sentence)
+    elif symbol == "sentencepiece":
         sentence = sentence.replace(" ", "").replace("\u2581", " ").strip()
     elif symbol == "wordpiece":
         sentence = sentence.replace(" ", "").replace("_", " ").strip()
